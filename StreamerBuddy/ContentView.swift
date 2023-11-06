@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var username: String=""
     @State private var showAlert = false
     @State private var joke: String = ""
+    @State private var responseText = ""
+    @State private var isLoading = false
     var body: some View {
         VStack {
             Image(systemName: "globe")
@@ -23,18 +25,65 @@ struct ContentView: View {
             ).onSubmit {
                 print("hello world")
             }
-            Text(joke)
-            Button {
-                        Task {
-                            let (data, _) = try await URLSession.shared.data(from: URL(string:"https://api.chucknorris.io/jokes/random")!)
-                            let decodedResponse = try? JSONDecoder().decode(Joke.self, from: data)
-                            joke = decodedResponse?.value ?? ""
-                        }
-                    } label: {
-                        Text("Fetch Chuck Norris Joke")
-                    }
+            Button(action: {
+                isLoading = true
+                fetchResponse(username: username)
+            }){
+                Text("Send API Request").padding()
+                }.disabled(isLoading)
+            if isLoading {
+                ProgressView("Loading...")
+            }
+            Text(responseText)
         }
         .padding()
+    }
+    
+    func fetchResponse(username: String) {
+        let fullRequest: [String: Any] = [
+            "model": "gpt-3.5-turbo-16k",
+            "messages": [
+                [
+                    "role": "system",
+                    "content": ""
+                ],
+                [
+                    "role": "user",
+                    "content": username
+                ]
+            ],
+            "temperature": 0.9,
+            "top_p": 1
+        ]
+        
+        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
+            print("Invalid URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("Bearer API_KEY", forHTTPHeaderField: "Authorization")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        if let requestData = try? JSONSerialization.data(withJSONObject: fullRequest) {
+            request.httpBody = requestData
+        }
+        
+        URLSession.shared.dataTask(with: request) { (data, response, error) in
+                if let data = data,
+                   let decodedResponse = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                   let choices = decodedResponse["choices"] as? [[String: Any]],
+                   let message = choices.first?["message"] as? [String: Any],
+                   let content = message["content"] as? String {
+                    
+                    DispatchQueue.main.async {
+                        self.responseText = content
+                    }
+                } else {
+                    print("API Request Failed")
+                }
+            }.resume()
     }
 }
 
